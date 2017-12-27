@@ -45,9 +45,7 @@ int main(int argc, char **argv) {
 	bodu *bodies = initBodies(nBodies);
     if (rank == 0) {
         parallel_average_time -= MPI_Wtime();
-	   printf("%.2\n", nBodies);
- +        printf("%.2f\n", simulationTime);
- +        printf("%.2f\n", dt);
+	 
     }
     size_t items_per_process = nBodies / world_size;
     
@@ -77,8 +75,8 @@ int main(int argc, char **argv) {
 	if (rank == 0) {
         parallel_average_time += MPI_Wtime();
           printf("%d\n", nBodies);
- +        printf("%.5f\n", simulationTime);
- +        printf("%.5f\n", dt);
+ +        printf("%.2f\n", simulationTime);
+ +        printf("%.2f\n", dt);
     
         for (size_t i = 0; i < nBodies; ++i){
 		printf("%.2f %.2f\n", bodies[i].x, bodies[i].y);
