@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
 	MPI_Datatype dt_body;
   	MPI_Type_contiguous(7, MPI_FLOAT, &dt_body);
   	MPI_Type_commit(&dt_body);
-	bodu *bodies = initBodies(nBodies);
+	body *bodies = initBodies(nBodies);
     if (rank == 0) {
         parallel_average_time -= MPI_Wtime();
 	 
@@ -61,7 +61,12 @@ int main(int argc, char **argv) {
         0,
         MPI_COMM_WORLD
     );
-	simulateWithBruteforce(items_per_process, local_bodies, dt);
+	simulateWithBruteforce(rank, nBodies, items_per_process, bodies, local_bodies, dt);
+	body *gathered_bodies = NULL;
+	if (rank == 0) {
+		gathered_bodies =
+        (body *) malloc(sizeof(*gathered_bodies) * nBodies);
+	}
 	MPI_Gather(
         local_bodies,
         items_per_process,
@@ -71,26 +76,26 @@ int main(int argc, char **argv) {
         dt_body,
         0,
         MPI_COMM_WORLD
-    );
+        );
 	if (rank == 0) {
         parallel_average_time += MPI_Wtime();
           printf("%d\n", nBodies);
- +        printf("%.2f\n", simulationTime);
- +        printf("%.2f\n", dt);
+         printf("%.2f\n", simulationTime);
+        printf("%.2f\n", dt);
     
         for (size_t i = 0; i < nBodies; ++i){
 		printf("%.2f %.2f\n", bodies[i].x, bodies[i].y);
- +        	printf("%.2f %.2f\n", bodies[i].ax, bodies[i].ay);
- +        	printf("%.2f %.2f\n", bodies[i].vx, bodies[i].vy);
- +        	printf("%.2f\n", bodies[i].mass);
+         	printf("%.2f %.2f\n", bodies[i].ax, bodies[i].ay);
+         	printf("%.2f %.2f\n", bodies[i].vx, bodies[i].vy);
+         	printf("%.2f\n", bodies[i].mass);
         for (float j = 0.0; j < simulationTime; j += dt)
- +    	{
- +	    	for (size_t i = 0; i < nBodies; ++i){
- +
- +	    		printf("%.2f %.2f\n", gathered_bodies[i].ax, gathered_bodies[i].ay);
- +	    		integrate(&gathered_bodies[i], dt);
- +	    	}
- +	    }
+    	{
+ 	    	for (size_t i = 0; i < nBodies; ++i){
+ 
+ 	    		printf("%.2f %.2f\n", gathered_bodies[i].ax, gathered_bodies[i].ay);
+ 	    		integrate(&gathered_bodies[i], dt);
+ 	    	}
+ 	    }
         	
         }
     }
@@ -113,7 +118,7 @@ void calculateNewtonGravityAcceleration(body *a, body *b, float *ax, float *ay) 
 	float vectorDistance = a->x * a->x + a->y * a->y
 	float vectorDistanceCubed = vectorDistance * vectorDistance * vectorDistance;
     float inverse = 1.0 / sqrt( vectorDistanceCubed);
-	float soft = 1;
+	float soft = 2000;
     float scale = b->mass * inverse;
 	*ax = (distanceX * scale);
 	*ay = (distanceY * scale);
