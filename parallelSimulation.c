@@ -16,17 +16,20 @@ typedef struct _body {
 } body;
 
 body  *initBodies (int nBodies);
-void integrate(body *planet, float deltaTime);
+void integrate(body *body, float deltaTime);
 void calculateNewtonGravityAcceleration(body *a, body *b, float *ax, float *ay);
-void simulateWithBruteforce(int nBodies, body *bodies, float dt);
+void simulateWithBruteforce(int rank, int totalBodies, int *bodies, float dt);
 float randerValue();
 
 int main(int argc, char **argv) {
-	float dt = 0.01;
+	
 	int nBodies = 100;
-	if (argc > 2) {
-		dt = atof(argv[1]);
-		nBodies = atoi(argv[2]);
+	float simulationTime = 1.0;
+	float dt = 0.1;
+	if(argc > 3){
+		nBodies = atof(argv[1]);
+		simulationTime = atoi(argv[2]);
+		dt = atoi(argv[3]);
 	}
 	double parallel_average_time = 0.0;
     MPI_Init(&argc, &argv);
@@ -39,15 +42,15 @@ int main(int argc, char **argv) {
 	MPI_Datatype dt_body;
   	MPI_Type_contiguous(7, MPI_FLOAT, &dt_body);
   	MPI_Type_commit(&dt_body);
+	bodu *bodies = initBodies(nBodies);
     if (rank == 0) {
         parallel_average_time -= MPI_Wtime();
+	   printf("%.2\n", nBodies);
+ +        printf("%.2f\n", simulationTime);
+ +        printf("%.2f\n", dt);
     }
     size_t items_per_process = nBodies / world_size;
-    body *bodies = NULL;
-    bodies = initializeBodies(nBodies);
-    if (rank == 0) {
-        bodies = initializeBodies(nBodies);
-    }
+    
 	body *local_bodies =
         (body *) malloc(sizeof(*local_bodies) * items_per_process);
     MPI_Scatter(
@@ -65,7 +68,7 @@ int main(int argc, char **argv) {
         local_bodies,
         items_per_process,
         dt_body,
-        bodies,
+        gathered_bodies,
         items_per_process,
         dt_body,
         0,
@@ -73,9 +76,24 @@ int main(int argc, char **argv) {
     );
 	if (rank == 0) {
         parallel_average_time += MPI_Wtime();
-        printf("Number of bodies: %.2d, time: %.2f\n", nBodies, parallel_average_time);
+          printf("%d\n", nBodies);
+ +        printf("%.5f\n", simulationTime);
+ +        printf("%.5f\n", dt);
+    
         for (size_t i = 0; i < nBodies; ++i){
-        	printf("Body #: %d, accelerationX - %f, accelerationY - %f\n", (int)i, bodies[i].ax, bodies[i].ay);
+		printf("%.2f %.2f\n", bodies[i].x, bodies[i].y);
+ +        	printf("%.2f %.2f\n", bodies[i].ax, bodies[i].ay);
+ +        	printf("%.2f %.2f\n", bodies[i].vx, bodies[i].vy);
+ +        	printf("%.2f\n", bodies[i].mass);
+        for (float j = 0.0; j < simulationTime; j += dt)
+ +    	{
+ +	    	for (size_t i = 0; i < nBodies; ++i){
+ +
+ +	    		printf("%.2f %.2f\n", gathered_bodies[i].ax, gathered_bodies[i].ay);
+ +	    		integrate(&gathered_bodies[i], dt);
+ +	    	}
+ +	    }
+        	
         }
     }
 	if (bodies != NULL) {
@@ -86,36 +104,37 @@ int main(int argc, char **argv) {
 	return 0;
 }
 void integrate(body *body, float deltaTime) {
-	body->x += body->vx * deltaTime + (1 / 2) * body->ax * deltaTime * deltaTime;
-	body->y += body->vy * deltaTime + (1 / 2) * body->ay * deltaTime * deltaTime;
+        body->x += body->vx * deltaTime;
+	body->y += body->vy * deltaTime;
 	body->vx += body->ax * deltaTime;
 	body->vy += body->ay * deltaTime;
 }
 void calculateNewtonGravityAcceleration(body *a, body *b, float *ax, float *ay) {
-	float distanceX = fabsf(b->x - a->x);
-	float distanceY = fabsf(b->y - a->y);
-	float vectorDistance = sqrt(a->x * a->x + a->y * a->y);
+	float distanceX = b->x - a->x
+	float distanceY = b->y - a->y
+	float vectorDistance = a->x * a->x + a->y * a->y
 	float vectorDistanceCubed = vectorDistance * vectorDistance * vectorDistance;
-    float inverse = 1.0 / vectorDistanceCubed;
+    float inverse = 1.0 / sqrt( vectorDistanceCubed);
+	float soft = 1;
     float scale = b->mass * inverse;
 	*ax = (distanceX * scale);
 	*ay = (distanceY * scale);
 }
-void simulateWithBruteforce(int nBodies, body *bodies, float dt) {
+void simulateWithBruteforce(int rank, int totalBodies, int *bodies, float dt) {
 	for(size_t i = 0; i < nBodies; i++) {
 		float total_ax = 0, total_ay = 0;
-		for (size_t j = 0; j < nBodies; j++) {
-			if (i == j) {
+		for (size_t j = 0; j < totalBodies; j++) {
+			if (j == nBodies * rank + i) {
 				continue;
 			}
 			float ax, ay;
-			calculateNewtonGravityAcceleration(&bodies[i], &bodies[j], &ax, &ay);
+			calculateNewtonGravityAcceleration(&local_bodies[i], &bodies[j], &ax, &ay);
 			total_ax += ax;
 			total_ay += ay;
 		}
-		bodies[i].ax = total_ax;
-		bodies[i].ay = total_ay;
-		integrate(&bodies[i], dt);
+		local_bodies[i].ax = total_ax;
+		local_bodies[i].ay = total_ay;
+		integrate(&local_bodies[i], dt);
 	}
 }
 
@@ -129,12 +148,12 @@ body  *initBodies (int nBodies) {
 	for (int i = 0; i < nBodies; i++) {
 		float angle = 	((float) i / nBodies) * 2.0 * PI + 
 						((randerValue() - 0.5) * 0.5);
-		float initialMass = 2;
+		float initialMass = 200;
 		body object = {	
 			.x = randerValue(), .y = randerValue(),
 			.vx = cos(angle) * accelerationScale * randerValue(), 
 			.vy = sin(angle) * accelerationScale * randerValue(), 
-			.mass = randValue() + initialMass * 0.5
+			.mass = initialMass * randValue() + initialMass * 0.5
 		};
         bodies[i] = object;
     }
